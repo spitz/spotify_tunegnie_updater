@@ -3,7 +3,8 @@
         "client_id": "YOUR_SPOTIFY_CLIENT_ID",
         "client_secret": "YOUR_SPOTIFY_CLIENT_SECRET",
         "refresh_token": "YOUR_SPOTIFY_REFRESH_TOKEN",
-        "playlist_id": "YOUR_SPOTIFY_PLAYLIST_ID"
+        "daily_playlist_id": "YOUR_SPOTIFY_PLAYLIST_ID",
+        "cumulative_playlist_id": "YOUR_CUMULATIVE_SPOTIFY_PLAYLIST_ID"
     },
     "tunegenie": {
         "api_url": "https://api.tunegenie.com/v2/brand/nowplaying/",

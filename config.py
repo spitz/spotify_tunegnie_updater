@@ -49,7 +49,8 @@ def get_spotify_config() -> Dict[str, str]:
         'client_id': config['spotify']['client_id'],
         'client_secret': config['spotify']['client_secret'],
         'refresh_token': config['spotify']['refresh_token'],
-        'playlist_id': config['spotify']['playlist_id']
+        'daily_playlist_id': config['spotify']['daily_playlist_id'],
+        'cumulative_playlist_id': config['spotify'].get('cumulative_playlist_id', '')
     }
 
 

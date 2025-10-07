@@ -47,12 +47,14 @@ def main():
             print("  python main.py --setup")
             sys.exit(1)
 
-        if "YOUR_" in spotify_config['playlist_id']:
-            print("ERROR: Please configure your Spotify playlist ID in config.json.")
+        if "YOUR_" in spotify_config['daily_playlist_id']:
+            print("ERROR: Please configure your daily playlist ID in config.json.")
             print("\nTo get your playlist ID:")
             print("1. Right-click on a playlist in Spotify")
             print("2. Share -> Copy link to playlist")
             print("3. Extract the ID from the URL")
+            print("4. Update 'daily_playlist_id' in config.json")
+            print("5. Optionally update 'cumulative_playlist_id' for a growing collection")
             sys.exit(1)
 
         # Run the updater

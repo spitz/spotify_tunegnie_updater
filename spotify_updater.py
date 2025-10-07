@@ -165,7 +165,7 @@ class SpotifyUpdater:
         try:
             while has_more_pages:
                 response = requests.get(
-                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['playlist_id']}/tracks",
+                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['daily_playlist_id']}/tracks",
                     headers=headers,
                     params={
                         "fields": "items(track(uri)),next,total",
@@ -195,7 +195,7 @@ class SpotifyUpdater:
                 batch = all_track_uris[i:i+100]
 
                 response = requests.delete(
-                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['playlist_id']}/tracks",
+                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['daily_playlist_id']}/tracks",
                     headers=headers,
                     json={"tracks": batch}
                 )
@@ -211,10 +211,68 @@ class SpotifyUpdater:
                 print(f"Response: {e.response.text}")
             return False
 
-    def add_tracks_to_playlist(self, track_uris: List[str]) -> bool:
-        """Add tracks to the playlist."""
+    def get_existing_tracks_from_cumulative_playlist(self) -> Set[str]:
+        """Get all existing track URIs from the cumulative playlist."""
+        if not self.access_token or not self.spotify_config['cumulative_playlist_id']:
+            return set()
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+
+        all_track_uris = set()
+        offset = 0
+        limit = 50  # Maximum allowed by Spotify API for get tracks
+        has_more_pages = True
+
+        try:
+            while has_more_pages:
+                response = requests.get(
+                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['cumulative_playlist_id']}/tracks",
+                    headers=headers,
+                    params={
+                        "fields": "items(track(uri)),next,total",
+                        "limit": limit,
+                        "offset": offset
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                # Extract track URIs from current batch
+                batch_uris = {item["track"]["uri"] for item in data["items"] if item["track"]}
+                all_track_uris.update(batch_uris)
+
+                # Check if there are more pages using the "next" field from Spotify API
+                has_more_pages = data.get("next") is not None
+                offset += limit
+
+            print(f"✓ Found {len(all_track_uris)} existing tracks in cumulative playlist")
+            return all_track_uris
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠ Failed to get cumulative playlist tracks: {e}")
+            return set()
+
+    def add_tracks_to_playlist(self, track_uris: List[str], playlist_type: str = "daily") -> bool:
+        """Add tracks to the specified playlist."""
         if not self.access_token or not track_uris:
             return False
+
+        # Determine which playlist to use
+        if playlist_type == "daily":
+            playlist_id = self.spotify_config['daily_playlist_id']
+            playlist_name = "daily"
+        elif playlist_type == "cumulative":
+            playlist_id = self.spotify_config['cumulative_playlist_id']
+            playlist_name = "cumulative"
+        else:
+            print(f"✗ Unknown playlist type: {playlist_type}")
+            return False
+
+        if not playlist_id:
+            print(f"⚠ No {playlist_name} playlist ID configured, skipping")
+            return True
 
         headers = {
             "Authorization": f"Bearer {self.access_token}",
@@ -227,18 +285,37 @@ class SpotifyUpdater:
 
             try:
                 response = requests.post(
-                    f"https://api.spotify.com/v1/playlists/{self.spotify_config['playlist_id']}/tracks",
+                    f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
                     headers=headers,
                     json={"uris": batch}
                 )
                 response.raise_for_status()
-                print(f"✓ Added {len(batch)} tracks to playlist")
+                print(f"✓ Added {len(batch)} tracks to {playlist_name} playlist")
 
             except requests.exceptions.RequestException as e:
-                print(f"✗ Failed to add tracks to playlist: {e}")
+                print(f"✗ Failed to add tracks to {playlist_name} playlist: {e}")
                 return False
 
         return True
+
+    def add_new_tracks_to_cumulative_playlist(self, track_uris: List[str]) -> bool:
+        """Add only new tracks to the cumulative playlist."""
+        if not self.spotify_config['cumulative_playlist_id']:
+            print("⚠ No cumulative playlist configured, skipping")
+            return True
+
+        print("\nProcessing cumulative playlist...")
+        existing_tracks = self.get_existing_tracks_from_cumulative_playlist()
+
+        # Filter out tracks that already exist
+        new_tracks = [uri for uri in track_uris if uri not in existing_tracks]
+
+        if not new_tracks:
+            print("✓ All tracks already exist in cumulative playlist")
+            return True
+
+        print(f"Adding {len(new_tracks)} new tracks to cumulative playlist...")
+        return self.add_tracks_to_playlist(new_tracks, "cumulative")
 
     def run(self):
         """Main execution flow."""
@@ -284,16 +361,21 @@ class SpotifyUpdater:
             print("No tracks found on Spotify. Exiting.")
             sys.exit(0)
 
-        # Step 4: Clear existing playlist
-        print("\nClearing existing playlist...")
+        # Step 4: Clear existing daily playlist
+        print("\nClearing existing daily playlist...")
         if not self.clear_playlist():
-            print("Failed to clear playlist. Exiting.")
+            print("Failed to clear daily playlist. Exiting.")
             sys.exit(1)
 
-        # Step 5: Add new tracks
-        print("\nAdding new tracks to playlist...")
-        if self.add_tracks_to_playlist(track_uris):
-            print(f"\n✓ Successfully updated playlist with {len(track_uris)} unique tracks!")
-        else:
-            print("\n✗ Failed to update playlist")
+        # Step 5: Add new tracks to daily playlist
+        print("\nAdding new tracks to daily playlist...")
+        if not self.add_tracks_to_playlist(track_uris, "daily"):
+            print("\n✗ Failed to update daily playlist")
             sys.exit(1)
+
+        # Step 6: Add new tracks to cumulative playlist (only if they don't already exist)
+        if not self.add_new_tracks_to_cumulative_playlist(track_uris):
+            print("\n✗ Failed to update cumulative playlist")
+            sys.exit(1)
+
+        print(f"\n✓ Successfully updated playlists with {len(track_uris)} unique tracks!")

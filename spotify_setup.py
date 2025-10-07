@@ -190,10 +190,12 @@ class SpotifySetup:
             print(f"\nPlease update the SPOTIFY_REFRESH_TOKEN in config.json with the value shown above.")
 
         # Also show playlist instruction
-        print("\nTo get your playlist ID:")
+        print("\nTo get your playlist IDs:")
         print("1. Right-click on a playlist in Spotify")
         print("2. Share -> Copy link to playlist")
         print("3. Extract the ID from the URL:")
         print("   https://open.spotify.com/playlist/[PLAYLIST_ID]?...")
-        print(f"\nUpdate SPOTIFY_PLAYLIST_ID in config.json with your playlist ID.")
-        print("\nOnce both values are updated, run the script without --setup to update your playlist.")
+        print(f"\nUpdate config.json with your playlist IDs:")
+        print("- 'daily_playlist_id': Gets cleared and updated daily")
+        print("- 'cumulative_playlist_id': Grows over time with unique tracks (optional)")
+        print("\nOnce configured, run the script without --setup to update your playlists.")
