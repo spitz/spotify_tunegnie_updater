@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  radio-playlist:
+    build: .
+    container_name: radio-playlist-updater
+    volumes:
+      # Mount config and cache to persistent storage
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    # Run once daily at 6 AM (adjust as needed)
+    # Note: For scheduled runs, you'll need to set up a cron job or use Synology's Task Scheduler
+    command: python main.py
+
+  # Optional: Setup container for initial configuration
+  radio-playlist-setup:
+    build: .
+    container_name: radio-playlist-setup
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    profiles:
+      - setup
+    command: python main.py --setup

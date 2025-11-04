@@ -12,11 +12,14 @@ Automatically update a Spotify playlist with songs played on WXRV (The River) ra
 
 ## Prerequisites
 
-- Python 3.6 or higher
+- Python 3.6+ (for local installation) OR Docker (for containerized deployment)
 - Spotify Developer Account
 - Spotify playlist (public or private)
+- For Synology: Synology NAS with DSM 7.0+ and Container Manager package installed
 
 ## Installation
+
+### Option 1: Local Installation
 
 1. Clone this repository:
 ```bash
@@ -32,6 +35,29 @@ pip install requests
 3. Copy the configuration template:
 ```bash
 cp config.json.template config.json
+```
+
+### Option 2: Docker Installation
+
+1. Clone this repository:
+```bash
+git clone https://github.com/yourusername/radio-playlist-updater.git
+cd radio-playlist-updater
+```
+
+2. Copy the configuration template:
+```bash
+cp config.json.template config.json
+```
+
+3. Build the Docker image:
+```bash
+docker build -t radio-playlist .
+```
+
+4. Create a data directory for persistent storage:
+```bash
+mkdir data
 ```
 
 ## Configuration
@@ -62,8 +88,17 @@ Edit `config.json` and add your Spotify Client ID and Client Secret:
 
 Run the setup process to authenticate with Spotify:
 
+**Local installation:**
 ```bash
-python spotify_tunegenie_updater.py --setup
+python main.py --setup
+```
+
+**Docker installation:**
+```bash
+docker run -it --rm \
+  -v $(pwd)/config.json:/app/config.json \
+  -v $(pwd)/data:/app/data \
+  radio-playlist python main.py --setup
 ```
 
 This will:
@@ -85,30 +120,102 @@ This will:
 
 Run the script to update your playlist with yesterday's songs:
 
+**Local installation:**
 ```bash
-python spotify_tunegenie_updater.py
+python main.py
+```
+
+**Docker installation:**
+```bash
+docker run --rm \
+  -v $(pwd)/config.json:/app/config.json:ro \
+  -v $(pwd)/data:/app/data \
+  radio-playlist
+```
+
+**Docker Compose:**
+```bash
+docker-compose up radio-playlist
 ```
 
 ### Automated Daily Updates
 
-#### Linux/macOS (cron)
+#### Local Installation
 
+**Linux/macOS (cron):**
 ```bash
 # Edit crontab
 crontab -e
 
 # Add this line to run daily at 1 AM
-0 1 * * * /usr/bin/python3 /path/to/spotify_tunegenie_updater.py
+0 1 * * * /usr/bin/python3 /path/to/main.py
 ```
 
-#### Windows (Task Scheduler)
-
+**Windows (Task Scheduler):**
 1. Open Task Scheduler
 2. Create Basic Task
 3. Set trigger: Daily
 4. Set action: Start a program
    - Program: `python.exe`
-   - Arguments: `C:\path\to\spotify_tunegenie_updater.py`
+   - Arguments: `C:\path\to\main.py`
+
+#### Docker Installation
+
+**Using cron (Linux/macOS):**
+```bash
+# Add to crontab to run daily at 6 AM
+0 6 * * * cd /path/to/radio-playlist && docker-compose up radio-playlist
+```
+
+#### Synology NAS Deployment
+
+For automated deployment on Synology NAS using Container Manager:
+
+1. **Build Container on Local Workstation:**
+   ```bash
+   # On your local machine (Mac/PC)
+   docker build -t radio-playlist .
+   docker save radio-playlist > radio-playlist.tar
+   ```
+
+2. **Transfer Image to Synology:**
+   - Copy the `radio-playlist.tar` file to your Synology NAS (via File Station, SCP, or shared folder)
+   - Also copy your configured `config.json` and create a `data` directory on the NAS
+
+3. **Import Container Image:**
+   - Open **Container Manager** in DSM
+   - Go to **Image** → **Add** → **Add from file**
+   - Select the `radio-playlist.tar` file
+   - Wait for import to complete
+
+4. **Create Container:**
+   - Go to **Container** → **Create**
+   - Select the `radio-playlist` image
+   - **Volume Settings:**
+     - Mount your `config.json` file to `/app/config.json` (read-only)
+     - Mount your data folder to `/app/data` (read-write)
+   - **Environment:** Set `PYTHONUNBUFFERED=1`
+   - **Auto-restart:** Disabled (we'll run it on schedule)
+
+5. **Schedule Daily Runs:**
+   - Go to **Control Panel** → **Task Scheduler**
+   - Create **Triggered Task** → **User-defined script**
+   - Set schedule (e.g., daily at 6 AM)
+   - Script content:
+     ```bash
+     docker start radio-playlist && docker wait radio-playlist
+     ```
+
+6. **Alternative: Using Docker Compose on Synology:**
+   - Copy your `docker-compose.yml` to the NAS
+   - In Container Manager, go to **Project** → **Create**
+   - Upload your `docker-compose.yml` file
+   - Ensure volume paths point to your NAS directories
+   - Schedule with Task Scheduler:
+     ```bash
+     cd /volume1/docker/radio-playlist
+     docker-compose up radio-playlist
+     ```
 
 ## Configuration Options
 
@@ -146,8 +253,17 @@ The script will show which songs couldn't be found and continue with the rest.
 
 If you get authentication errors, run the setup process again:
 
+**Local installation:**
 ```bash
-python spotify_tunegenie_updater.py --setup
+python main.py --setup
+```
+
+**Docker installation:**
+```bash
+docker run -it --rm \
+  -v $(pwd)/config.json:/app/config.json \
+  -v $(pwd)/data:/app/data \
+  radio-playlist python main.py --setup
 ```
 
 ## Security Notes
