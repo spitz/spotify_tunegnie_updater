@@ -217,6 +217,75 @@ For automated deployment on Synology NAS using Container Manager:
      docker-compose up radio-playlist
      ```
 
+#### GitHub Actions Deployment
+
+For automated deployment using GitHub Actions (recommended for cloud-based hosting):
+
+1. **Fork or Clone this Repository** to your GitHub account
+
+2. **Configure GitHub Secrets:**
+   - Go to your repository's Settings → Secrets and variables → Actions
+   - Click "New repository secret" and add each of the following:
+
+   | Secret Name | Description | How to Get |
+   |-------------|-------------|------------|
+   | `SPOTIFY_CLIENT_ID` | Your Spotify app client ID | From [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) |
+   | `SPOTIFY_CLIENT_SECRET` | Your Spotify app client secret | From [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) |
+   | `SPOTIFY_REFRESH_TOKEN` | Your Spotify refresh token | Run `python main.py --setup` locally first |
+   | `SPOTIFY_DAILY_PLAYLIST_ID` | Your target playlist ID | Right-click playlist → Share → Copy link, extract ID |
+   | `SPOTIFY_CUMULATIVE_PLAYLIST_ID` | (Optional) Cumulative playlist ID | Same as above, or leave as "YOUR_CUMULATIVE_SPOTIFY_PLAYLIST_ID" |
+
+3. **Get Your Refresh Token:**
+
+   You'll need to run the setup process locally first to get your refresh token:
+   ```bash
+   # Clone the repo locally
+   git clone https://github.com/yourusername/spotify_tunegnie_updater.git
+   cd spotify_tunegnie_updater
+
+   # Install dependencies
+   pip install -r requirements.txt
+
+   # Create config from template
+   cp config.json.template config.json
+
+   # Edit config.json with your client_id and client_secret
+   # Then run setup
+   python main.py --setup
+   ```
+
+   Copy the refresh token from the output and add it to your GitHub secrets.
+
+4. **Workflow Schedule:**
+
+   The GitHub Action is configured to run daily at 2 AM UTC. To change the schedule:
+   - Edit `.github/workflows/daily-update.yml`
+   - Modify the cron expression under `schedule:`
+   ```yaml
+   schedule:
+     - cron: '0 2 * * *'  # Daily at 2 AM UTC
+   ```
+
+5. **Manual Trigger:**
+
+   You can also trigger the workflow manually:
+   - Go to Actions tab in your repository
+   - Select "Daily Spotify Playlist Update"
+   - Click "Run workflow"
+
+6. **Monitor Runs:**
+
+   - View workflow runs in the Actions tab
+   - Check logs for any errors
+   - Failed runs will upload error logs as artifacts
+
+**Benefits of GitHub Actions:**
+- Free for public repositories
+- No server maintenance required
+- Automatic error logging
+- Easy schedule configuration
+- Runs in the cloud (no local infrastructure needed)
+
 ## Configuration Options
 
 ### Timezone

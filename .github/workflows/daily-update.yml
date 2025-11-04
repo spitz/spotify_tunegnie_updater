@@ -1,0 +1,65 @@
+name: Daily Spotify Playlist Update
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC (adjust as needed)
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger from Actions tab
+
+jobs:
+  update-playlist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create config.json from secrets
+        run: |
+          cat > config.json << EOF
+          {
+              "spotify": {
+                  "client_id": "${{ secrets.SPOTIFY_CLIENT_ID }}",
+                  "client_secret": "${{ secrets.SPOTIFY_CLIENT_SECRET }}",
+                  "refresh_token": "${{ secrets.SPOTIFY_REFRESH_TOKEN }}",
+                  "daily_playlist_id": "${{ secrets.SPOTIFY_DAILY_PLAYLIST_ID }}",
+                  "cumulative_playlist_id": "${{ secrets.SPOTIFY_CUMULATIVE_PLAYLIST_ID }}"
+              },
+              "tunegenie": {
+                  "api_url": "https://api.tunegenie.com/v2/brand/nowplaying/",
+                  "api_id": "m2g_bar",
+                  "brand": "wxrv",
+                  "timezone_offset": "-04:00"
+              }
+          }
+          EOF
+
+      - name: Run playlist updater
+        run: |
+          python main.py
+        env:
+          # Make secrets available as environment variables if needed
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+
+      - name: Upload logs (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: |
+            *.log
+            cache.db
+          if-no-files-found: ignore
