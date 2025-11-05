@@ -20,6 +20,16 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Restore SQLite cache
+        uses: actions/cache@v4
+        with:
+          path: cache.db
+          # Cache persists track searches to minimize Spotify API calls
+          # The cache is automatically saved at the end of the workflow
+          key: spotify-cache-db-${{ github.repository }}
+          restore-keys: |
+            spotify-cache-db-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

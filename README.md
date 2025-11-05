@@ -285,6 +285,24 @@ For automated deployment using GitHub Actions (recommended for cloud-based hosti
 - Automatic error logging
 - Easy schedule configuration
 - Runs in the cloud (no local infrastructure needed)
+- Persistent SQLite cache reduces API calls and improves performance
+
+**Cache Persistence:**
+The workflow uses GitHub Actions cache to persist the SQLite database (`cache.db`) between runs. This cache stores:
+- Previously searched tracks and their Spotify URIs
+- Track metadata from both TuneGenie and Spotify
+- Playlist history
+
+This means:
+- First run: All tracks need to be searched on Spotify (slower)
+- Subsequent runs: Only new tracks are searched (much faster)
+- Cache is shared across all workflow runs for your repository
+- No manual cache management required
+
+**Note on Cache Limits:**
+- GitHub Actions cache has a 10GB limit per repository
+- The SQLite cache file is typically very small (< 1MB for thousands of tracks)
+- Old cache entries are automatically cleaned up by the application
 
 ## Configuration Options
 
