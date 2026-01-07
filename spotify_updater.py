@@ -379,7 +379,82 @@ class SpotifyUpdater:
             return True
 
         print(f"Adding {len(new_tracks)} new tracks to cumulative playlist...")
-        return self.add_tracks_to_playlist(new_tracks, "cumulative")
+
+        # Add tracks in smaller batches with better error handling for cumulative playlist
+        success = self.add_tracks_to_cumulative_playlist_batched(new_tracks)
+
+        if success:
+            # Update cache with new tracks
+            updated_tracks = existing_tracks | set(new_tracks)
+            self.cache_db.update_playlist_tracks(self.spotify_config['cumulative_playlist_id'], list(updated_tracks))
+
+        return success
+
+    def add_tracks_to_cumulative_playlist_batched(self, track_uris: List[str]) -> bool:
+        """Add tracks to cumulative playlist with enhanced error handling and smaller batches."""
+        if not self.access_token or not track_uris:
+            return False
+
+        playlist_id = self.spotify_config['cumulative_playlist_id']
+        if not playlist_id:
+            print("⚠ No cumulative playlist ID configured")
+            return False
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Use smaller batch size for cumulative playlist to avoid issues
+        batch_size = 50  # Reduced from 100 to be more conservative
+        total_added = 0
+        failed_batches = 0
+
+        for i in range(0, len(track_uris), batch_size):
+            batch = track_uris[i:i + batch_size]
+            batch_number = (i // batch_size) + 1
+
+            # Validate URIs in this batch
+            valid_uris = [uri for uri in batch if uri and uri.startswith('spotify:track:')]
+            if len(valid_uris) != len(batch):
+                print(f"⚠ Batch {batch_number}: Filtered out {len(batch) - len(valid_uris)} invalid URIs")
+
+            if not valid_uris:
+                print(f"⚠ Batch {batch_number}: No valid URIs to add")
+                continue
+
+            try:
+                response = requests.post(
+                    f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                    headers=headers,
+                    json={"uris": valid_uris}
+                )
+
+                if response.status_code == 200 or response.status_code == 201:
+                    total_added += len(valid_uris)
+                    print(f"✓ Added {len(valid_uris)} tracks to cumulative playlist (batch {batch_number})")
+                else:
+                    print(f"✗ Failed to add batch {batch_number}: HTTP {response.status_code}")
+                    print(f"Response: {response.text}")
+                    failed_batches += 1
+
+                    # Continue with next batch instead of failing completely
+                    continue
+
+            except requests.exceptions.RequestException as e:
+                print(f"✗ Error adding batch {batch_number} to cumulative playlist: {e}")
+                failed_batches += 1
+                continue
+
+        # Consider success if at least some batches worked
+        if total_added > 0:
+            print(f"✓ Successfully added {total_added} tracks to cumulative playlist")
+            if failed_batches > 0:
+                print(f"⚠ {failed_batches} batches failed, but partial success achieved")
+            return True
+        else:
+            print(f"✗ Failed to add any tracks to cumulative playlist ({failed_batches} batches failed)")
+            return False
 
     def initialize_cache(self):
         """Initialize cache with current playlist contents on first run."""
