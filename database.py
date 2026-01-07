@@ -148,6 +148,25 @@ class CacheDatabase:
 
             conn.commit()
 
+    def update_playlist_tracks_with_timestamps(self, playlist_id: str, track_data: List[tuple]):
+        """Update the cached tracks for a playlist with Spotify-provided timestamps."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Clear existing playlist tracks
+            cursor.execute("DELETE FROM playlist_tracks WHERE playlist_id = ?", (playlist_id,))
+
+            # Add tracks with Spotify-provided added_at timestamps
+            for position, (uri, added_at) in enumerate(track_data):
+                cursor.execute("""
+                    INSERT OR IGNORE INTO playlist_tracks (playlist_id, tunegenie_id, position, added_at)
+                    SELECT ?, tunegenie_id, ?, ?
+                    FROM tracks
+                    WHERE spotify_uri = ?
+                """, (playlist_id, position, added_at, uri))
+
+            conn.commit()
+
     def add_tracks_to_playlist_cache(self, playlist_id: str, tunegenie_ids: List[str]):
         """Add tracks to playlist cache by TuneGenie IDs (for cumulative playlist updates)."""
         with sqlite3.connect(self.db_path) as conn:
@@ -218,6 +237,44 @@ class CacheDatabase:
                     'spotify_album': result[6]
                 }
             return None
+
+    def get_playlist_track_count(self, playlist_id: str) -> int:
+        """Get the total number of tracks in a playlist."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*)
+                FROM playlist_tracks
+                WHERE playlist_id = ?
+            """, (playlist_id,))
+            return cursor.fetchone()[0]
+
+    def get_oldest_tracks_from_playlist(self, playlist_id: str, count: int) -> List[str]:
+        """Get the oldest tracks from a playlist based on added_at timestamp."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT t.spotify_uri
+                FROM playlist_tracks pt
+                JOIN tracks t ON pt.tunegenie_id = t.tunegenie_id
+                WHERE pt.playlist_id = ? AND t.spotify_uri IS NOT NULL
+                ORDER BY pt.added_at ASC, pt.position ASC
+                LIMIT ?
+            """, (playlist_id, count))
+            return [row[0] for row in cursor.fetchall()]
+
+    def remove_tracks_from_playlist_cache(self, playlist_id: str, spotify_uris: List[str]):
+        """Remove specific tracks from playlist cache."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for uri in spotify_uris:
+                cursor.execute("""
+                    DELETE FROM playlist_tracks
+                    WHERE playlist_id = ? AND tunegenie_id IN (
+                        SELECT tunegenie_id FROM tracks WHERE spotify_uri = ?
+                    )
+                """, (playlist_id, uri))
+            conn.commit()
 
     def get_cache_stats(self) -> Dict[str, int]:
         """Get statistics about cached data."""

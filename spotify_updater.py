@@ -263,7 +263,7 @@ class SpotifyUpdater:
             "Authorization": f"Bearer {self.access_token}"
         }
 
-        all_track_uris = []
+        all_track_data = []  # Store (uri, added_at) tuples
         offset = 0
         limit = 50  # Maximum allowed by Spotify API for get tracks
         has_more_pages = True
@@ -274,7 +274,7 @@ class SpotifyUpdater:
                     f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
                     headers=headers,
                     params={
-                        "fields": "items(track(uri,name,artists,album)),next,total",
+                        "fields": "items(track(uri,name,artists,album),added_at),next,total",
                         "limit": limit,
                         "offset": offset
                     }
@@ -282,18 +282,21 @@ class SpotifyUpdater:
                 response.raise_for_status()
                 data = response.json()
 
-                # Extract track URIs from current batch
+                # Extract track URIs and added_at timestamps from current batch
                 for item in data["items"]:
                     if item["track"]:
-                        all_track_uris.append(item["track"]["uri"])
+                        all_track_data.append((
+                            item["track"]["uri"],
+                            item.get("added_at")  # This is the Spotify-provided timestamp
+                        ))
 
                 # Check if there are more pages using the "next" field from Spotify API
                 has_more_pages = data.get("next") is not None
                 offset += limit
 
-            # Update cache with current playlist contents
-            self.cache_db.update_playlist_tracks(playlist_id, all_track_uris)
-            print(f"✓ Synced {len(all_track_uris)} tracks in {playlist_name} playlist cache")
+            # Update cache with current playlist contents including timestamps
+            self.cache_db.update_playlist_tracks_with_timestamps(playlist_id, all_track_data)
+            print(f"✓ Synced {len(all_track_data)} tracks in {playlist_name} playlist cache")
 
         except requests.exceptions.RequestException as e:
             print(f"⚠ Failed to sync {playlist_name} playlist cache: {e}")
@@ -388,6 +391,9 @@ class SpotifyUpdater:
             updated_tracks = existing_tracks | set(new_tracks)
             self.cache_db.update_playlist_tracks(self.spotify_config['cumulative_playlist_id'], list(updated_tracks))
 
+            # Check if we need to trim the playlist to stay within limits
+            self.trim_cumulative_playlist_if_needed()
+
         return success
 
     def add_tracks_to_cumulative_playlist_batched(self, track_uris: List[str]) -> bool:
@@ -454,6 +460,71 @@ class SpotifyUpdater:
             return True
         else:
             print(f"✗ Failed to add any tracks to cumulative playlist ({failed_batches} batches failed)")
+            return False
+
+    def remove_tracks_from_playlist(self, playlist_id: str, track_uris: List[str]) -> bool:
+        """Remove tracks from a Spotify playlist."""
+        if not self.access_token or not track_uris or not playlist_id:
+            return False
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json"
+        }
+
+        # Remove tracks in batches (Spotify API limits to 100 tracks per delete request)
+        for i in range(0, len(track_uris), 100):
+            batch = track_uris[i:i + 100]
+            tracks_to_remove = [{"uri": uri} for uri in batch]
+
+            try:
+                response = requests.delete(
+                    f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                    headers=headers,
+                    json={"tracks": tracks_to_remove}
+                )
+                response.raise_for_status()
+                print(f"✓ Removed {len(batch)} tracks from cumulative playlist")
+
+            except requests.exceptions.RequestException as e:
+                print(f"✗ Failed to remove batch of tracks from cumulative playlist: {e}")
+                return False
+
+        return True
+
+    def trim_cumulative_playlist_if_needed(self) -> bool:
+        """Check if cumulative playlist exceeds max size and trim oldest tracks if needed."""
+        playlist_id = self.spotify_config['cumulative_playlist_id']
+        max_tracks = self.spotify_config['max_cumulative_tracks']
+
+        if not playlist_id:
+            return True
+
+        current_count = self.cache_db.get_playlist_track_count(playlist_id)
+        print(f"Current cumulative playlist size: {current_count} tracks (max: {max_tracks})")
+
+        if current_count <= max_tracks:
+            return True
+
+        # Calculate how many tracks to remove
+        tracks_to_remove_count = current_count - max_tracks + 50  # Remove extra 50 to give breathing room
+        print(f"Playlist exceeds limit, removing {tracks_to_remove_count} oldest tracks...")
+
+        # Get the oldest tracks
+        oldest_track_uris = self.cache_db.get_oldest_tracks_from_playlist(playlist_id, tracks_to_remove_count)
+
+        if not oldest_track_uris:
+            print("⚠ No tracks found to remove (possible cache issue)")
+            return True
+
+        # Remove from Spotify
+        if self.remove_tracks_from_playlist(playlist_id, oldest_track_uris):
+            # Remove from cache
+            self.cache_db.remove_tracks_from_playlist_cache(playlist_id, oldest_track_uris)
+            print(f"✓ Successfully trimmed {len(oldest_track_uris)} tracks from cumulative playlist")
+            return True
+        else:
+            print("✗ Failed to trim cumulative playlist")
             return False
 
     def initialize_cache(self):

@@ -4,7 +4,8 @@
         "client_secret": "YOUR_SPOTIFY_CLIENT_SECRET",
         "refresh_token": "YOUR_SPOTIFY_REFRESH_TOKEN",
         "daily_playlist_id": "YOUR_SPOTIFY_PLAYLIST_ID",
-        "cumulative_playlist_id": "YOUR_CUMULATIVE_SPOTIFY_PLAYLIST_ID"
+        "cumulative_playlist_id": "YOUR_CUMULATIVE_SPOTIFY_PLAYLIST_ID",
+        "max_cumulative_tracks": 9000
     },
     "tunegenie": {
         "api_url": "https://api.tunegenie.com/v2/brand/nowplaying/",

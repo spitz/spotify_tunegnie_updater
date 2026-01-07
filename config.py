@@ -50,7 +50,8 @@ def get_spotify_config() -> Dict[str, str]:
         'client_secret': config['spotify']['client_secret'],
         'refresh_token': config['spotify']['refresh_token'],
         'daily_playlist_id': config['spotify']['daily_playlist_id'],
-        'cumulative_playlist_id': config['spotify'].get('cumulative_playlist_id', '')
+        'cumulative_playlist_id': config['spotify'].get('cumulative_playlist_id', ''),
+        'max_cumulative_tracks': config['spotify'].get('max_cumulative_tracks', 9000)
     }
 
 
