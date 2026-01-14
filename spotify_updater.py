@@ -249,6 +249,32 @@ class SpotifyUpdater:
                 print(f"Response: {e.response.text}")
             return False
 
+    def get_actual_playlist_size(self, playlist_id: str) -> int:
+        """Get the actual number of tracks in a Spotify playlist (without syncing all tracks)."""
+        if not self.access_token or not playlist_id:
+            return 0
+
+        headers = {
+            "Authorization": f"Bearer {self.access_token}"
+        }
+
+        try:
+            response = requests.get(
+                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                headers=headers,
+                params={
+                    "fields": "total",
+                    "limit": 1
+                }
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("total", 0)
+
+        except requests.exceptions.RequestException as e:
+            print(f"⚠ Failed to get playlist size: {e}")
+            return 0
+
     def sync_playlist_cache(self, playlist_id: str, playlist_name: str, playlist_type: str):
         """Sync playlist contents with cache."""
         if not self.access_token or not playlist_id:
@@ -373,6 +399,12 @@ class SpotifyUpdater:
 
         print("\nProcessing cumulative playlist...")
 
+        # Get the ACTUAL current size from Spotify before any operations
+        actual_current_count = self.get_actual_playlist_size(self.spotify_config['cumulative_playlist_id'])
+        max_tracks = self.spotify_config['max_cumulative_tracks']
+
+        print(f"Actual playlist size from Spotify: {actual_current_count} tracks (max: {max_tracks})")
+
         # Force a fresh sync to ensure cache is up-to-date before any operations
         self.sync_playlist_cache(
             self.spotify_config['cumulative_playlist_id'],
@@ -382,19 +414,20 @@ class SpotifyUpdater:
 
         existing_tracks = self.get_existing_tracks_from_cumulative_playlist()
 
-        # Check if we need to trim BEFORE adding new tracks to prevent hitting the limit
-        current_count = self.cache_db.get_playlist_track_count(self.spotify_config['cumulative_playlist_id'])
-        max_tracks = self.spotify_config['max_cumulative_tracks']
-
         # Calculate how many tracks we'll have after adding new ones
         new_tracks = [uri for uri in track_uris if uri not in existing_tracks]
-        projected_count = current_count + len(new_tracks)
+        projected_count = actual_current_count + len(new_tracks)
 
-        print(f"Current: {current_count} tracks, New: {len(new_tracks)} tracks, Projected: {projected_count} tracks (max: {max_tracks})")
+        print(f"New tracks to add: {len(new_tracks)}, Projected: {projected_count} tracks")
 
-        # Trim preemptively if we'll exceed the limit
-        if projected_count > max_tracks:
-            tracks_to_remove_count = projected_count - max_tracks + 50  # Remove extra 50 for breathing room
+        # Trim preemptively if we'll exceed the limit (or if already over)
+        if projected_count > max_tracks or actual_current_count > max_tracks:
+            # If we're already over, trim down to max, then remove more for the new tracks
+            if actual_current_count > max_tracks:
+                tracks_to_remove_count = actual_current_count - max_tracks + len(new_tracks) + 50
+            else:
+                tracks_to_remove_count = projected_count - max_tracks + 50
+
             print(f"Preemptively trimming {tracks_to_remove_count} oldest tracks to make room...")
 
             if not self.trim_cumulative_playlist(tracks_to_remove_count):
