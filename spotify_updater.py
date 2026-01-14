@@ -372,10 +372,38 @@ class SpotifyUpdater:
             return True
 
         print("\nProcessing cumulative playlist...")
+
+        # Force a fresh sync to ensure cache is up-to-date before any operations
+        self.sync_playlist_cache(
+            self.spotify_config['cumulative_playlist_id'],
+            "Cumulative",
+            "cumulative"
+        )
+
         existing_tracks = self.get_existing_tracks_from_cumulative_playlist()
 
-        # Filter out tracks that already exist
+        # Check if we need to trim BEFORE adding new tracks to prevent hitting the limit
+        current_count = self.cache_db.get_playlist_track_count(self.spotify_config['cumulative_playlist_id'])
+        max_tracks = self.spotify_config['max_cumulative_tracks']
+
+        # Calculate how many tracks we'll have after adding new ones
         new_tracks = [uri for uri in track_uris if uri not in existing_tracks]
+        projected_count = current_count + len(new_tracks)
+
+        print(f"Current: {current_count} tracks, New: {len(new_tracks)} tracks, Projected: {projected_count} tracks (max: {max_tracks})")
+
+        # Trim preemptively if we'll exceed the limit
+        if projected_count > max_tracks:
+            tracks_to_remove_count = projected_count - max_tracks + 50  # Remove extra 50 for breathing room
+            print(f"Preemptively trimming {tracks_to_remove_count} oldest tracks to make room...")
+
+            if not self.trim_cumulative_playlist(tracks_to_remove_count):
+                print("✗ Failed to trim playlist before adding new tracks")
+                return False
+
+            # Refresh the existing tracks after trimming
+            existing_tracks = self.get_existing_tracks_from_cumulative_playlist()
+            new_tracks = [uri for uri in track_uris if uri not in existing_tracks]
 
         if not new_tracks:
             print("✓ All tracks already exist in cumulative playlist")
@@ -390,9 +418,6 @@ class SpotifyUpdater:
             # Update cache with new tracks
             updated_tracks = existing_tracks | set(new_tracks)
             self.cache_db.update_playlist_tracks(self.spotify_config['cumulative_playlist_id'], list(updated_tracks))
-
-            # Check if we need to trim the playlist to stay within limits
-            self.trim_cumulative_playlist_if_needed()
 
         return success
 
@@ -492,23 +517,17 @@ class SpotifyUpdater:
 
         return True
 
-    def trim_cumulative_playlist_if_needed(self) -> bool:
-        """Check if cumulative playlist exceeds max size and trim oldest tracks if needed."""
+    def trim_cumulative_playlist(self, tracks_to_remove_count: int) -> bool:
+        """Trim a specific number of oldest tracks from the cumulative playlist."""
         playlist_id = self.spotify_config['cumulative_playlist_id']
-        max_tracks = self.spotify_config['max_cumulative_tracks']
 
         if not playlist_id:
             return True
 
-        current_count = self.cache_db.get_playlist_track_count(playlist_id)
-        print(f"Current cumulative playlist size: {current_count} tracks (max: {max_tracks})")
-
-        if current_count <= max_tracks:
+        if tracks_to_remove_count <= 0:
             return True
 
-        # Calculate how many tracks to remove
-        tracks_to_remove_count = current_count - max_tracks + 50  # Remove extra 50 to give breathing room
-        print(f"Playlist exceeds limit, removing {tracks_to_remove_count} oldest tracks...")
+        print(f"Trimming {tracks_to_remove_count} oldest tracks from cumulative playlist...")
 
         # Get the oldest tracks
         oldest_track_uris = self.cache_db.get_oldest_tracks_from_playlist(playlist_id, tracks_to_remove_count)
