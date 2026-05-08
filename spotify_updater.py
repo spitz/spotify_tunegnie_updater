@@ -66,17 +66,41 @@ class SpotifyUpdater:
                 print(f"Response: {e.response.text}")
             return False
 
-    def fetch_tunegenie_songs(self) -> List[Dict]:
-        """Fetch songs from TuneGenie API for yesterday."""
+    def fetch_tunegenie_songs(self) -> Optional[List[Dict]]:
+        """Fetch songs from TuneGenie API for yesterday.
+
+        Returns a list of songs (possibly empty) on success, or None on failure.
+        """
         timeframe = self.get_yesterday_timeframe()
         params = {**self.tunegenie_config['api_params'], **timeframe}
+
+        # TuneGenie 403s requests with the default python-requests UA from
+        # datacenter IPs (e.g. GitHub Actions runners). Mimic the browser widget
+        # that normally consumes this endpoint.
+        station = params.get('b', '')
+        referer = f"https://{station}.com/" if station else "https://tunegenie.com/"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": referer,
+            "Origin": referer.rstrip("/"),
+        }
 
         print(f"Fetching songs from {timeframe['since']} to {timeframe['until']}")
         print(f"Full URL with params: {self.tunegenie_config['api_url']}")
         print(f"Parameters: {params}")
 
         try:
-            response = requests.get(self.tunegenie_config['api_url'], params=params)
+            response = requests.get(
+                self.tunegenie_config['api_url'],
+                params=params,
+                headers=headers,
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -118,7 +142,7 @@ class SpotifyUpdater:
             if hasattr(e, 'response') and e.response is not None:
                 print(f"Response status: {e.response.status_code}")
                 print(f"Response text: {e.response.text}")
-            return []
+            return None
 
     def search_spotify_track(self, tunegenie_id: str, artist: str, title: str) -> str:
         """Search for a track on Spotify and return its URI, using cache when possible."""
@@ -623,6 +647,9 @@ class SpotifyUpdater:
 
         # Step 2: Fetch songs from TuneGenie
         songs = self.fetch_tunegenie_songs()
+        if songs is None:
+            print("Failed to fetch from TuneGenie. Exiting with error.")
+            sys.exit(1)
         if not songs:
             print("No songs found. Exiting.")
             sys.exit(0)
