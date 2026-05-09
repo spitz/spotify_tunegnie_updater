@@ -167,55 +167,124 @@ crontab -e
 0 6 * * * cd /path/to/radio-playlist && docker-compose up radio-playlist
 ```
 
-#### Synology NAS Deployment
+#### Synology NAS Deployment (DS925+ / Container Manager)
 
-For automated deployment on Synology NAS using Container Manager:
+The image is built for you by GitHub Actions on every push to `main` and
+attached to the workflow run as a downloadable artifact. You don't need
+Docker installed locally — everything below is configured through the
+Synology DSM UI, with credentials supplied as environment variables (no
+`config.json` on the NAS).
 
-1. **Build Container on Local Workstation:**
+##### 1. Download the image artifact from GitHub
+
+1. In the repo, open **Actions** → **Build Docker Image**.
+2. Click the most recent successful run on `main`.
+3. Under **Artifacts**, download `radio-playlist-image-<sha>.zip`.
+4. Unzip it locally — you'll get `radio-playlist.tar`.
+
+##### 2. Get a Spotify refresh token (one-time, on your computer)
+
+The Synology container is non-interactive, so the OAuth flow has to run
+once on a desktop with a browser:
+
+```bash
+git clone https://github.com/yourusername/spotify_tunegnie_updater.git
+cd spotify_tunegnie_updater
+pip install -r requirements.txt
+cp config.json.template config.json
+# edit config.json: fill in client_id and client_secret only
+python main.py --setup
+```
+
+Copy the **refresh token** that's printed at the end. You'll paste it
+into the Synology UI as `SPOTIFY_REFRESH_TOKEN` in step 4. You can
+discard the local `config.json` afterward.
+
+##### 3. Import the image into Container Manager
+
+1. Copy `radio-playlist.tar` to the NAS (File Station, SMB, or SCP).
+2. Open **Container Manager** in DSM.
+3. **Image** → **Add** → **Add From File** → pick `radio-playlist.tar`.
+4. Wait for the import to finish; you should see `radio-playlist:latest`
+   in the Image list.
+
+##### 4. Create the container (configure entirely in the UI)
+
+1. **Image** tab → select `radio-playlist:latest` → **Run**.
+2. **General Settings**:
+   - Container name: `radio-playlist-updater`
+   - Enable auto-restart: **off** (the container is one-shot — it runs,
+     updates the playlist, then exits).
+3. **Advanced Settings** → **Volume** → **Add Folder**:
+   - Mount path in container: `/app/data`
+   - Source: a folder on the NAS you create for this purpose, e.g.
+     `/docker/radio-playlist/data`. This is where `cache.db` lives so
+     Spotify search results persist between runs.
+4. **Advanced Settings** → **Environment**: click **+** and add the
+   following variables. The first four are required; the rest are
+   optional with sensible defaults.
+
+   | Variable | Required | Description |
+   |----------|----------|-------------|
+   | `SPOTIFY_CLIENT_ID` | yes | From the Spotify Developer Dashboard. |
+   | `SPOTIFY_CLIENT_SECRET` | yes | From the Spotify Developer Dashboard. |
+   | `SPOTIFY_REFRESH_TOKEN` | yes | From step 2 above. |
+   | `SPOTIFY_DAILY_PLAYLIST_ID` | yes | Playlist that gets replaced daily. |
+   | `SPOTIFY_CUMULATIVE_PLAYLIST_ID` | no | Optional growing playlist. Omit to disable. |
+   | `SPOTIFY_MAX_CUMULATIVE_TRACKS` | no | Default `9000`. |
+   | `TUNEGENIE_API_ID` | no | Default `m2g_bar`. |
+   | `TUNEGENIE_BRAND` | no | Default `wxrv` (WXRV / The River). |
+   | `TUNEGENIE_TIMEZONE_OFFSET` | no | Default `-04:00`. |
+   | `PYTHONUNBUFFERED` | no | Set to `1` so logs stream live in the UI. |
+
+5. **Execution Command**: leave blank — the image's default `CMD`
+   (`python main.py`) is correct.
+6. Click **Next** → **Done**. The container will start once and exit;
+   that first run is your smoke test. Open **Container** → click the
+   container → **Logs** to confirm it printed `✓ Found N songs from
+   TuneGenie` and updated the playlist. (If it errors with "missing
+   required config 'X'", you forgot env var `X` — edit the container,
+   add it, and rerun.)
+
+##### 5. Schedule it via Synology Task Scheduler
+
+1. **Control Panel** → **Task Scheduler** → **Create** →
+   **Scheduled Task** → **User-defined script**.
+2. **General**:
+   - Task: `Run radio-playlist-updater`
+   - User: `root` (Task Scheduler needs root to control Docker.)
+   - Enabled: checked.
+3. **Schedule**:
+   - Date: Daily.
+   - First run time: pick a time after the radio station's "yesterday"
+     window has closed for your timezone — e.g. **02:00**.
+   - Frequency: Run every day.
+4. **Task Settings** → **Run command**:
    ```bash
-   # On your local machine (Mac/PC)
-   docker build -t radio-playlist .
-   docker save radio-playlist > radio-playlist.tar
+   docker start -a radio-playlist-updater
    ```
+   `-a` attaches stdout/stderr so the output is captured in the Task
+   Scheduler run log, and the task's exit code reflects the container's
+   exit code (so a failed run shows up as a failed task).
+5. (Optional, recommended) **Task Settings** → **Notification**:
+   check **Send run details by email** and supply your email so a
+   non-zero exit (e.g., another TuneGenie 403, or expired credentials)
+   reaches you instead of dying silently.
+6. **OK** to save. Right-click the task → **Run** to test it
+   immediately. Then **Action** → **View Result** to see logs.
 
-2. **Transfer Image to Synology:**
-   - Copy the `radio-playlist.tar` file to your Synology NAS (via File Station, SCP, or shared folder)
-   - Also copy your configured `config.json` and create a `data` directory on the NAS
+##### Updating to a newer image
 
-3. **Import Container Image:**
-   - Open **Container Manager** in DSM
-   - Go to **Image** → **Add** → **Add from file**
-   - Select the `radio-playlist.tar` file
-   - Wait for import to complete
+When you push a change to `main` and want to roll it out:
 
-4. **Create Container:**
-   - Go to **Container** → **Create**
-   - Select the `radio-playlist` image
-   - **Volume Settings:**
-     - Mount your `config.json` file to `/app/config.json` (read-only)
-     - Mount your data folder to `/app/data` (read-write)
-   - **Environment:** Set `PYTHONUNBUFFERED=1`
-   - **Auto-restart:** Disabled (we'll run it on schedule)
-
-5. **Schedule Daily Runs:**
-   - Go to **Control Panel** → **Task Scheduler**
-   - Create **Triggered Task** → **User-defined script**
-   - Set schedule (e.g., daily at 6 AM)
-   - Script content:
-     ```bash
-     docker start radio-playlist && docker wait radio-playlist
-     ```
-
-6. **Alternative: Using Docker Compose on Synology:**
-   - Copy your `docker-compose.yml` to the NAS
-   - In Container Manager, go to **Project** → **Create**
-   - Upload your `docker-compose.yml` file
-   - Ensure volume paths point to your NAS directories
-   - Schedule with Task Scheduler:
-     ```bash
-     cd /volume1/docker/radio-playlist
-     docker-compose up radio-playlist
-     ```
+1. Download the new artifact (step 1).
+2. Container Manager → **Image** → **Add** → **Add From File** → pick
+   the new `radio-playlist.tar`. The new tag (`radio-playlist:<sha>`)
+   imports alongside `:latest`, which is overwritten in place.
+3. Container Manager → **Container** → select `radio-playlist-updater`
+   → **Action** → **Reset**. Synology recreates the container from the
+   updated `:latest` image, preserving your env vars and volume mount.
+4. The next scheduled run picks up the new code.
 
 #### GitHub Actions Deployment
 

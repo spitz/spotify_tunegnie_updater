@@ -9,7 +9,6 @@ Usage:
 """
 
 import argparse
-import sys
 
 from config import get_spotify_config
 from spotify_setup import SpotifySetup
@@ -32,30 +31,9 @@ def main():
         # Run setup mode
         SpotifySetup.run_setup()
     else:
-        # Check if credentials are configured
-        spotify_config = get_spotify_config()
-
-        if "YOUR_" in spotify_config['client_id'] or "YOUR_" in spotify_config['client_secret']:
-            print("ERROR: Please configure your Spotify credentials in config.json.")
-            print("\nRun with --setup flag to begin configuration:")
-            print("  python main.py --setup")
-            sys.exit(1)
-
-        if "YOUR_" in spotify_config['refresh_token']:
-            print("ERROR: Missing Spotify refresh token.")
-            print("\nRun with --setup flag to authenticate:")
-            print("  python main.py --setup")
-            sys.exit(1)
-
-        if "YOUR_" in spotify_config['daily_playlist_id']:
-            print("ERROR: Please configure your daily playlist ID in config.json.")
-            print("\nTo get your playlist ID:")
-            print("1. Right-click on a playlist in Spotify")
-            print("2. Share -> Copy link to playlist")
-            print("3. Extract the ID from the URL")
-            print("4. Update 'daily_playlist_id' in config.json")
-            print("5. Optionally update 'cumulative_playlist_id' for a growing collection")
-            sys.exit(1)
+        # Validate that all required Spotify config is present (config.py
+        # exits with a helpful message naming the missing field/env var).
+        get_spotify_config()
 
         # Run the updater
         updater = SpotifyUpdater()

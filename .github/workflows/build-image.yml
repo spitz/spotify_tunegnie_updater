@@ -1,0 +1,42 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Compute short SHA
+        id: vars
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # Synology DS925+ uses an AMD Ryzen V1500B (x86_64), so target linux/amd64.
+      # `outputs: type=docker,dest=...` writes a tar that Synology Container
+      # Manager (Image -> Add -> Add From File) and `docker load` both accept.
+      - name: Build image and export tar
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          tags: |
+            radio-playlist:latest
+            radio-playlist:${{ steps.vars.outputs.sha_short }}
+          outputs: type=docker,dest=/tmp/radio-playlist.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: radio-playlist-image-${{ steps.vars.outputs.sha_short }}
+          path: /tmp/radio-playlist.tar
+          retention-days: 30

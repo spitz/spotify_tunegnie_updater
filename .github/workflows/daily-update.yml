@@ -1,9 +1,11 @@
 name: Daily Spotify Playlist Update
 
 on:
-  schedule:
-    # Run daily at 2 AM UTC (adjust as needed)
-    - cron: '0 2 * * *'
+  # Schedule disabled — TuneGenie blocks GitHub Actions runner IPs (403).
+  # The container is now run on Synology via Container Manager + Task Scheduler.
+  # Re-enable the cron line below if you ever route through a non-GHA proxy.
+  # schedule:
+  #   - cron: '0 2 * * *'
   workflow_dispatch:  # Allow manual trigger from Actions tab
 
 jobs:

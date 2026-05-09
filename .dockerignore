@@ -43,5 +43,14 @@ Thumbs.db
 cache.db
 data/
 
+# Local secrets / dev artifacts that must never bake into the image
+config.json
+*.tar
+temp_logs/
+
+# CI / repo metadata
+.github
+.claude
+
 # Documentation
 README.md
